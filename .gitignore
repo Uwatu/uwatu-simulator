@@ -1,0 +1,23 @@
+placeholder.txt
+
+# Compiled binaries and executables
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output and profiles
+*.test
+*.out
+*.prof
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE workspace files
+.idea/
+.vscode/
+*.swp
