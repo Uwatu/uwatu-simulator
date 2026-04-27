@@ -1,0 +1,8 @@
+{
+  "scenario_name": "Rapid Disease Outbreak",
+  "keyframes": [
+    { "hour": 0, "accel_modifier": 1.0, "temp_modifier": 0.0 },
+    { "hour": 2, "accel_modifier": 0.7, "temp_modifier": 0.8 },
+    { "hour": 5, "accel_modifier": 0.3, "temp_modifier": 2.1 }
+  ]
+}
