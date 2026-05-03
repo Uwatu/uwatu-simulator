@@ -24,8 +24,8 @@ func main() {
 	fmt.Println("========================================")
 
 	myHerd := []*hardware.Tag{
-		hardware.NewTag("DEV_001", "27830000001", "FARM_NORTH", "COW_A1"),
-		hardware.NewTag("DEV_002", "27830000002", "FARM_NORTH", "COW_A2"),
+		hardware.NewTag("DEV_001", "+99999991000", "FARM_NORTH", "UWT‑ZA‑COW-0001"),
+		hardware.NewTag("DEV_002", "+99999991001", "FARM_NORTH", "UWT‑ZA‑COW-0002"),
 	}
 
 	startTime := time.Now()

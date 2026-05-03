@@ -24,68 +24,95 @@ Unlike standard hardware simulators that output random noise, Uwatu utilizes a B
 
 Ensure you have Go installed, then clone the repository:
 
-git clone [https://github.com/uwatu/uwatu-simulator.git](https://github.com/uwatu/uwatu-simulator.git)
+```bash
+git clone https://github.com/uwatu/uwatu-simulator.git
 cd uwatu-simulator
+```
 
 **Install Dependencies:**
 The simulator relies on the Eclipse Paho MQTT library.
-go get [github.com/eclipse/paho.mqtt.golang](https://github.com/eclipse/paho.mqtt.golang)
+
+```bash
+go get github.com/eclipse/paho.mqtt.golang
+```
 
 **Build the Executable:**
+
 For Linux/macOS:
+```bash
 go build -o bin/uwatu-simulator cmd/simulate/main.go
+```
 
 For Windows:
+```bash
 go build -o bin/uwatu-simulator.exe cmd/simulate/main.go
+```
 
 ## Usage and CLI Flags
 
 The simulator is fully dynamic and controlled via terminal flags.
 
 **View all commands:**
+```bash
 ./bin/uwatu-simulator --help
+```
 
 **Run a baseline (Healthy) simulation at normal speed:**
+```bash
 ./bin/uwatu-simulator
+```
 
 **Run a Time-Warped Disease Scenario (1 real second = 1 simulated hour):**
+```bash
 ./bin/uwatu-simulator --speed 3600 --scenario config/scenarios/disease_72h.json
+```
 
 **Point to a Custom MQTT Broker:**
+```bash
 ./bin/uwatu-simulator --broker tcp://localhost:1883 --client my_custom_sim_01
+```
 
 ## Creating Scenarios
 
-Scenarios dictate how the herd's biology deviates from the baseline over time. Create a JSON file in config/scenarios/ using the Keyframe structure. The engine will automatically interpolate the values between hours.
+Scenarios dictate how the herd's biology deviates from the baseline over time. Create a JSON file in `config/scenarios/` using the Keyframe structure. The engine will automatically interpolate the values between hours.
 
-**Example: disease_72h.json**
+**Example: `disease_72h.json`**
+```json
 {
-"scenario_name": "Rapid Disease Outbreak",
-"keyframes": [
-{ "hour": 0, "accel_modifier": 1.0, "temp_modifier": 0.0 },
-{ "hour": 24, "accel_modifier": 0.7, "temp_modifier": 0.8 },
-{ "hour": 72, "accel_modifier": 0.3, "temp_modifier": 2.1 }
-]
+  "scenario_name": "Rapid Disease Outbreak",
+  "keyframes": [
+    { "hour": 0,  "accel_modifier": 1.0, "temp_modifier": 0.0 },
+    { "hour": 24, "accel_modifier": 0.7, "temp_modifier": 0.8 },
+    { "hour": 72, "accel_modifier": 0.3, "temp_modifier": 2.1 }
+  ]
 }
+```
 
 ## Data Output (Signal Matrix)
 
-The simulator publishes telemetry data to the broker using a hierarchical topic structure: uwatu/farm/{farmID}/tag/{deviceID}.
+The simulator publishes telemetry data to the broker using a hierarchical topic structure: `uwatu/farm/{farmID}/tag/{deviceID}`.
 
 **Sample JSON Payload:**
+```json
 {
-"device_id": "DEV_001",
-"msisdn": "27830000001",
-"farm_id": "FARM_NORTH",
-"animal_id": "COW_A1",
-"battery_mv": 3580,
-"battery_pct": 98.5,
-"uptime_s": 86400,
-"seq": 142,
-"accel_magnitude": 12,
-"body_temp_c": 38.6,
-"timestamp": "2026-04-26T18:00:00Z"
+  "device_id": "DEV_001",
+  "msisdn": "27830000001",
+  "farm_id": "FARM_NORTH",
+  "animal_id": "COW_A1",
+  "battery_mv": 3580,
+  "battery_pct": 98.5,
+  "uptime_s": 86400,
+  "seq": 142,
+  "accel_magnitude": 12,
+  "body_temp_c": 38.6,
+  "timestamp": "2026-04-26T18:00:00Z"
 }
+```
 
 ## Watching the Live Stream
-By default, the simulator targets the HiveMQ public sandbox. You can watch your data stream live by visiting the HiveMQ Websocket Client and subscribing to the topic: uwatu/farm/+/tag/#
+
+By default, the simulator targets the HiveMQ public sandbox. You can watch your data stream live by visiting the HiveMQ Websocket Client and subscribing to the topic:
+
+```
+uwatu/farm/+/tag/#
+```
