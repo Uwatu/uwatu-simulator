@@ -33,36 +33,62 @@ func (e *Engine) Step(realDeltaSeconds int) {
 	simulatedDeltaSeconds := realDeltaSeconds * e.SpeedMult
 	e.SimTime = e.SimTime.Add(time.Duration(simulatedDeltaSeconds) * time.Second)
 
-	// This returns a time.Duration (nanoseconds)
+	// Elapsed time in hours since simulation start
 	duration := e.SimTime.Sub(e.StartSimTime)
-
-	// This converts that duration into a float64 of hours (e.g., 0.5 for 30 mins)
 	elapsedHours := duration.Hours()
-	accelMod, tempMod := director.GetModifiers(float64(elapsedHours), e.Scenario)
+
+	// Disease / biology modifiers from scenario
+	accelMod, tempMod := director.GetModifiers(elapsedHours, e.Scenario)
+
+	// Location and SIM swap overrides from scenario
+	demoLat, demoLon, simSwap := director.GetDemoOverrides(elapsedHours, e.Scenario)
 
 	for _, tag := range e.Tags {
 		tag.Tick(simulatedDeltaSeconds)
 
-		// Generate the baseline (healthy) math
+		// Generate baseline (healthy) sensor data
 		accel, temp := biology.GenerateBaselineTelemetry(e.SimTime)
 
+		// Apply disease modifiers
 		moddedAccel := accelMod * float64(accel)
-		moddedTemp := tempMod + float64(temp)
+		moddedTemp := tempMod + temp
 
-		var newAccel int = int(moddedAccel)
-		if newAccel < 0 {
-			newAccel = 0
+		// Build the base signal matrix
+		payload := emitter.BuildNormalSignalMatrix(
+			tag.DeviceID, tag.Msisdn, tag.FarmID, tag.AnimalID,
+			tag.BatteryMv, tag.BatteryPct, tag.UptimeS, tag.Seq,
+			int(moddedAccel), moddedTemp, e.SimTime,
+		)
+
+		// Override with scenario location if provided
+		if demoLat != 0 && demoLon != 0 {
+			payload.DemoLat = demoLat
+			payload.DemoLon = demoLon
 		}
+		payload.SimSwap = simSwap
 
-		payload := emitter.BuildNormalSignalMatrix(tag.DeviceID, tag.Msisdn, tag.FarmID, tag.AnimalID,
-			tag.BatteryMv, tag.BatteryPct, tag.UptimeS, tag.Seq, newAccel, moddedTemp, e.SimTime)
-
+		// Publish to MQTT
 		err := e.Emitter.Publish(tag.FarmID, tag.DeviceID, payload)
 		if err != nil {
 			fmt.Printf("Failed to publish for tag %s: %v\n", tag.DeviceID, err)
 		} else {
-			fmt.Printf("[MQTT] Sent payload for %s at %s\n", tag.DeviceID, e.SimTime.Format("15:04:05"))
-		}
+			locStr := "no scenario"
+if demoLat != 0 && demoLon != 0 {
+    locStr = fmt.Sprintf("%.4f, %.4f", demoLat, demoLon)
+}
+swapStr := "false"
+if simSwap {
+    swapStr = "true"
+}
 
+fmt.Printf("[MQTT] %-8s │ TEMP: %4.1f°C │ ACC: %3d │ BATT: %3d%% │ LOC: %s │ SIM_SWAP: %s\n",
+    tag.DeviceID,
+    moddedTemp,
+    int(moddedAccel),
+    tag.BatteryPct,
+    locStr,
+    swapStr,
+)
+		}
 	}
 }
