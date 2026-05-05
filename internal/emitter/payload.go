@@ -59,6 +59,9 @@ type SignalMatrix struct {
 	NokiaSignals    NokiaSignals    `json:"nokia_signals"`
 	FirmwarePayload FirmwarePayload `json:"firmware_payload"`
 	Context         Context         `json:"context"`
+	DemoLat         float64         `json:"demo_lat,omitempty"`
+	DemoLon         float64         `json:"demo_lon,omitempty"`
+	SimSwap         bool            `json:"sim_swap,omitempty"`
 }
 
 // BuildNormalSignalMatrix creates a baseline JSON payload for a healthy animal.

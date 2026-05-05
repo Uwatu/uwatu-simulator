@@ -1,0 +1,9 @@
+{
+  "scenario_name": "Theft Demo",
+  "keyframes": [
+    { "hour": 0, "accel_modifier": 1.0, "temp_modifier": 0.0, "demo_lat": 47.4863, "demo_lon": 19.0792, "sim_swap": false },
+    { "hour": 1, "accel_modifier": 1.2, "temp_modifier": 0.0, "demo_lat": 47.4885, "demo_lon": 19.0820, "sim_swap": false },
+    { "hour": 2, "accel_modifier": 1.5, "temp_modifier": 0.0, "demo_lat": 47.4895, "demo_lon": 19.0835, "sim_swap": true },
+    { "hour": 3, "accel_modifier": 1.0, "temp_modifier": 0.0, "demo_lat": 47.4895, "demo_lon": 19.0835, "sim_swap": true }
+  ]
+}
