@@ -76,6 +76,7 @@ func BuildNormalSignalMatrix(deviceID, msisdn, farmID, animalID string, batteryM
 	// For the Context, hardcode a baseline (e.g., IsNight: false).
 	// In Go, the hour is 0-23. Night is roughly before 6 AM or after 6 PM.
 	isNight := simTime.Hour() < 6 || simTime.Hour() >= 18
+
 	return SignalMatrix{
 		DeviceID:  deviceID,
 		Msisdn:    msisdn,
@@ -115,7 +116,7 @@ func BuildNormalSignalMatrix(deviceID, msisdn, farmID, animalID string, batteryM
 		},
 
 		Context: Context{
-			IsNight:                       isNight,
+			IsNight:                       isNight, // 
 			IsDrySeason:                   true,
 			MarketDay:                     true,
 			MinutesSinceGeofenceDeparture: nil,

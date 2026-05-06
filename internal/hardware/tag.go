@@ -63,6 +63,7 @@ func (t *Tag) Tick(deltaSeconds int) {
 	}
 }
 
+
 // BufferMessage saves a payload to the tag's memory during a network outage.
 func (t *Tag) BufferMessage(payload emitter.SignalMatrix) {
 	t.FlashBuffer = append(t.FlashBuffer, payload)
