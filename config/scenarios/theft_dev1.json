@@ -1,0 +1,9 @@
+{
+  "scenario_name": "Theft DEV_001",
+  "keyframes": [
+    { "hour": 0, "accel_modifier": 1.0, "temp_modifier": 0.0 },
+    { "hour": 0,   "devices": ["DEV_001"], "demo_lat": -0.3680, "demo_lon": 35.2830, "sim_swap": false },
+    { "hour": 0.5, "devices": ["DEV_001"], "demo_lat": -0.3700, "demo_lon": 35.2850, "sim_swap": false },
+    { "hour": 1,   "devices": ["DEV_001"], "demo_lat": -0.3740, "demo_lon": 35.2890, "sim_swap": true }
+  ]
+}
