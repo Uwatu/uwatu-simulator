@@ -6,12 +6,13 @@ import (
 )
 
 type KeyFrame struct {
-	Hour          int     `json:"hour"`
-	AccelModifier float64 `json:"accel_modifier"`
-	TempModifier  float64 `json:"temp_modifier"`
-	DemoLat       float64 `json:"demo_lat,omitempty"`
-	DemoLon       float64 `json:"demo_lon,omitempty"`
-	SimSwap       bool    `json:"sim_swap,omitempty"`
+	Hour          int      `json:"hour"`
+	AccelModifier float64  `json:"accel_modifier"`
+	TempModifier  float64  `json:"temp_modifier"`
+	DemoLat       float64  `json:"demo_lat,omitempty"`
+	DemoLon       float64  `json:"demo_lon,omitempty"`
+	SimSwap       bool     `json:"sim_swap,omitempty"`
+	Devices       []string `json:"devices,omitempty"` // empty → all devices
 }
 
 type Scenario struct {
@@ -67,78 +68,53 @@ func GetModifiers(currentHour float64, scenario Scenario) (float64, float64) {
 	return accelMod, tempMod
 }
 
-// GetDemoOverrides returns the interpolated lat/lon and sim_swap for the current hour.
-// If the scenario contains lat/lon keyframes, it interpolates them linearly.
-// sim_swap becomes true from the first keyframe where it's set.
-func GetDemoOverrides(currentHour float64, scenario Scenario) (float64, float64, bool) {
+// deviceMatches returns true if the keyframe applies to the given device.
+func deviceMatches(frame KeyFrame, deviceID string) bool {
+	if len(frame.Devices) == 0 {
+		return true // applies to all
+	}
+	for _, d := range frame.Devices {
+		if d == deviceID {
+			return true
+		}
+	}
+	return false
+}
+
+// GetDemoOverrides returns the effective (lat, lon, sim_swap) for a specific device at the given hour.
+// It finds the last keyframe before or at currentHour whose Devices contain the deviceID
+// (or which has no Devices, meaning all devices). No interpolation – uses the exact values of
+// that keyframe.
+func GetDemoOverrides(currentHour float64, scenario Scenario, deviceID string) (float64, float64, bool) {
 	if len(scenario.KeyFrames) == 0 {
 		return 0, 0, false
 	}
 
-	// ---- lat/lon interpolation ----
 	var lat, lon float64
-	startLat, startLon := 0.0, 0.0
-	endLat, endLon := 0.0, 0.0
-	startHour := 0.0
-	endHour := 0.0
-	foundInterval := false
+	var simSwap bool
+	latFound := false
 
-	// find first keyframe that has lat/lon
-	firstLatIdx := -1
-	for i := range scenario.KeyFrames {
-		if scenario.KeyFrames[i].DemoLat != 0 || scenario.KeyFrames[i].DemoLon != 0 {
-			firstLatIdx = i
-			break
-		}
-	}
-	if firstLatIdx == -1 {
-		goto simSwap
-	}
-
-	// before first lat keyframe -> use the first lat keyframe values
-	if currentHour <= float64(scenario.KeyFrames[firstLatIdx].Hour) {
-		lat = scenario.KeyFrames[firstLatIdx].DemoLat
-		lon = scenario.KeyFrames[firstLatIdx].DemoLon
-		goto simSwap
-	}
-
-	for i := firstLatIdx; i < len(scenario.KeyFrames)-1; i++ {
-		if scenario.KeyFrames[i+1].DemoLat != 0 || scenario.KeyFrames[i+1].DemoLon != 0 {
-			startLat = scenario.KeyFrames[i].DemoLat
-			startLon = scenario.KeyFrames[i].DemoLon
-			endLat = scenario.KeyFrames[i+1].DemoLat
-			endLon = scenario.KeyFrames[i+1].DemoLon
-			startHour = float64(scenario.KeyFrames[i].Hour)
-			endHour = float64(scenario.KeyFrames[i+1].Hour)
-			if currentHour >= startHour && currentHour <= endHour {
-				foundInterval = true
+	for i := len(scenario.KeyFrames) - 1; i >= 0; i-- {
+		frame := scenario.KeyFrames[i]
+		if currentHour >= float64(frame.Hour) && deviceMatches(frame, deviceID) {
+			if !latFound && (frame.DemoLat != 0 || frame.DemoLon != 0) {
+				lat = frame.DemoLat
+				lon = frame.DemoLon
+				latFound = true
+			}
+			if frame.SimSwap {
+				simSwap = true
 				break
 			}
 		}
 	}
 
-	if foundInterval {
-		progress := (currentHour - startHour) / (endHour - startHour)
-		lat = startLat + progress*(endLat-startLat)
-		lon = startLon + progress*(endLon-startLon)
-	} else {
-		// past last lat keyframe -> use last known lat/lon
-		for i := len(scenario.KeyFrames) - 1; i >= 0; i-- {
-			if scenario.KeyFrames[i].DemoLat != 0 {
+	if !latFound {
+		for i := 0; i < len(scenario.KeyFrames); i++ {
+			if deviceMatches(scenario.KeyFrames[i], deviceID) && (scenario.KeyFrames[i].DemoLat != 0 || scenario.KeyFrames[i].DemoLon != 0) {
 				lat = scenario.KeyFrames[i].DemoLat
 				lon = scenario.KeyFrames[i].DemoLon
 				break
-			}
-		}
-	}
-
-simSwap:
-	// ---- sim_swap: becomes true from the first keyframe where it's true ----
-	simSwap := false
-	for i := 0; i < len(scenario.KeyFrames); i++ {
-		if currentHour >= float64(scenario.KeyFrames[i].Hour) {
-			if scenario.KeyFrames[i].SimSwap {
-				simSwap = true
 			}
 		}
 	}
