@@ -58,7 +58,8 @@ func main() {
 		}
 	}()
 
-	dashboard := ui.NewDashboard(snapshots, *scenarioFlag, *speedFlag, *brokerFlag)
+	// Pass simEngine into the Dashboard so the UI can control it
+	dashboard := ui.NewDashboard(snapshots, *scenarioFlag, *speedFlag, *brokerFlag, simEngine)
 	p := tea.NewProgram(dashboard, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
