@@ -54,8 +54,9 @@ func (e *Engine) Step(realDeltaSeconds int) {
 		payload := emitter.BuildNormalSignalMatrix(tag.DeviceID, tag.Msisdn, tag.FarmID, tag.AnimalID,
 			tag.BatteryMv, tag.BatteryPct, tag.UptimeS, tag.Seq, newAccel, moddedTemp, e.SimTime)
 
-		// Per‑device demo overrides
-		demoLat, demoLon, simSwap := director.GetDemoOverrides(elapsedHours, e.Scenario, tag.DeviceID)
+		// Use smooth interpolation instead of discrete overrides
+		demoLat, demoLon, simSwap := director.GetDemoInterpolated(elapsedHours, e.Scenario, tag.DeviceID)
+
 		if demoLat != 0 && demoLon != 0 {
 			payload.DemoLat = demoLat
 			payload.DemoLon = demoLon
