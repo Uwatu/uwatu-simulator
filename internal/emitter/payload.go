@@ -1,4 +1,5 @@
 package emitter
+//payload.go
 
 import "time"
 
