@@ -36,9 +36,9 @@ type Engine struct {
 	SpeedMult    int
 	Scenario     director.Scenario
 	Emitter      *emitter.MqttEmitter
-	Snapshots    chan<- TagSnapshot
+	Snapshots    chan<- TagSnapshot // send-only channel to UI
 
-	mu sync.RWMutex // Protects Scenario and StartSimTime
+	mu sync.RWMutex // Protects Scenario and StartSimTime from UI thread
 }
 
 func NewEngine(
@@ -60,31 +60,33 @@ func NewEngine(
 	}
 }
 
-// SetScenario safely swaps the active scenario and resets the scenario timeline.
+// SetScenario safely swaps the active scenario and resets the timeline.
 func (e *Engine) SetScenario(scn director.Scenario) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Scenario = scn
-	e.StartSimTime = e.SimTime // Reset so the new scenario starts at hour 0
+	e.StartSimTime = e.SimTime // Reset so the new scenario starts at its hour 0
 }
 
+// Step advances the simulation by a fractional amount of real seconds.
 func (e *Engine) Step(realDeltaSeconds float64) {
 	simulatedDeltaSeconds := realDeltaSeconds * float64(e.SpeedMult)
 	e.SimTime = e.SimTime.Add(time.Duration(simulatedDeltaSeconds * float64(time.Second)))
 
-	// Safely read scenario and start time
+	// Thread-safe read of current scenario state
 	e.mu.RLock()
 	currentScenario := e.Scenario
-	startSim := e.StartSimTime
+	startSimTime := e.StartSimTime
 	e.mu.RUnlock()
 
-	duration := e.SimTime.Sub(startSim)
+	duration := e.SimTime.Sub(startSimTime)
 	elapsedHours := duration.Hours()
 
 	accelMod, tempMod := director.GetModifiers(elapsedHours, currentScenario)
 
 	for _, tag := range e.Tags {
 		tag.Tick(int(simulatedDeltaSeconds))
+
 		accel, temp := biology.GenerateBaselineTelemetry(e.SimTime)
 
 		moddedAccel := accelMod * float64(accel)
@@ -131,6 +133,7 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 			PublishErr: publishErr,
 		}
 
+		// Non-blocking send — drop if dashboard is too slow
 		select {
 		case e.Snapshots <- snap:
 		default:
