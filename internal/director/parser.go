@@ -81,7 +81,88 @@ func deviceMatches(frame KeyFrame, deviceID string) bool {
 	return false
 }
 
+// GetDemoInterpolated returns smoothly interpolated (lat, lon, sim_swap)
+// for a specific device at the given hour. Position is blended between
+// the two nearest keyframes; sim_swap is only true when reaching that frame.
+func GetDemoInterpolated(currentHour float64, scenario Scenario, deviceID string) (float64, float64, bool) {
+	if len(scenario.KeyFrames) == 0 {
+		return 0, 0, false
+	}
+
+	// Collect keyframes that apply to this device (or all devices)
+	var frames []KeyFrame
+	for _, kf := range scenario.KeyFrames {
+		if deviceMatches(kf, deviceID) {
+			frames = append(frames, kf)
+		}
+	}
+	if len(frames) == 0 {
+		return 0, 0, false
+	}
+
+	// Find the segment that contains currentHour
+	var prev, next KeyFrame
+	prev = frames[0]
+	next = frames[0]
+
+	if currentHour <= frames[0].Hour {
+		prev = frames[0]
+		next = frames[0]
+	} else if currentHour >= frames[len(frames)-1].Hour {
+		prev = frames[len(frames)-1]
+		next = frames[len(frames)-1]
+	} else {
+		for i := 0; i < len(frames)-1; i++ {
+			if currentHour >= frames[i].Hour && currentHour <= frames[i+1].Hour {
+				prev = frames[i]
+				next = frames[i+1]
+				break
+			}
+		}
+	}
+
+	// If neither frame has position data, return zero
+	if (prev.DemoLat == 0 && prev.DemoLon == 0) && (next.DemoLat == 0 && next.DemoLon == 0) {
+		return 0, 0, false
+	}
+
+	// If one frame lacks position, use the other directly
+	if prev.DemoLat == 0 && prev.DemoLon == 0 {
+		return next.DemoLat, next.DemoLon, (currentHour >= next.Hour && next.SimSwap)
+	}
+	if next.DemoLat == 0 && next.DemoLon == 0 {
+		return prev.DemoLat, prev.DemoLon, (currentHour >= prev.Hour && prev.SimSwap)
+	}
+
+	// Compute blend factor
+	span := next.Hour - prev.Hour
+	var t float64
+	if span > 0 {
+		t = (currentHour - prev.Hour) / span
+		if t < 0 {
+			t = 0
+		} else if t > 1 {
+			t = 1
+		}
+	} else {
+		t = 0
+	}
+
+	// Linearly interpolate position
+	lat := prev.DemoLat + (next.DemoLat-prev.DemoLat)*t
+	lon := prev.DemoLon + (next.DemoLon-prev.DemoLon)*t
+
+	// SIM swap becomes true only when we are exactly at or past the keyframe that sets it
+	simSwap := false
+	if currentHour >= next.Hour && next.SimSwap {
+		simSwap = true
+	}
+
+	return lat, lon, simSwap
+}
+
 // GetDemoOverrides returns the effective (lat, lon, sim_swap) for a specific device at the given hour.
+// Kept for backwards compatibility; new code should use GetDemoInterpolated for smooth motion.
 func GetDemoOverrides(currentHour float64, scenario Scenario, deviceID string) (float64, float64, bool) {
 	if len(scenario.KeyFrames) == 0 {
 		return 0, 0, false
