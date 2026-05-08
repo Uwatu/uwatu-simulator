@@ -2,7 +2,9 @@ package engine
 
 import (
 	"fmt"
+	"sync"
 	"time"
+
 	"uwatu-simulator/internal/biology"
 	"uwatu-simulator/internal/director"
 	"uwatu-simulator/internal/emitter"
@@ -34,7 +36,9 @@ type Engine struct {
 	SpeedMult    int
 	Scenario     director.Scenario
 	Emitter      *emitter.MqttEmitter
-	Snapshots    chan<- TagSnapshot // send-only channel to UI
+	Snapshots    chan<- TagSnapshot
+
+	mu sync.RWMutex // Protects Scenario and StartSimTime
 }
 
 func NewEngine(
@@ -56,19 +60,31 @@ func NewEngine(
 	}
 }
 
-// Step advances the simulation by a fractional amount of real seconds.
+// SetScenario safely swaps the active scenario and resets the scenario timeline.
+func (e *Engine) SetScenario(scn director.Scenario) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.Scenario = scn
+	e.StartSimTime = e.SimTime // Reset so the new scenario starts at hour 0
+}
+
 func (e *Engine) Step(realDeltaSeconds float64) {
 	simulatedDeltaSeconds := realDeltaSeconds * float64(e.SpeedMult)
 	e.SimTime = e.SimTime.Add(time.Duration(simulatedDeltaSeconds * float64(time.Second)))
 
-	duration := e.SimTime.Sub(e.StartSimTime)
+	// Safely read scenario and start time
+	e.mu.RLock()
+	currentScenario := e.Scenario
+	startSim := e.StartSimTime
+	e.mu.RUnlock()
+
+	duration := e.SimTime.Sub(startSim)
 	elapsedHours := duration.Hours()
 
-	accelMod, tempMod := director.GetModifiers(elapsedHours, e.Scenario)
+	accelMod, tempMod := director.GetModifiers(elapsedHours, currentScenario)
 
 	for _, tag := range e.Tags {
 		tag.Tick(int(simulatedDeltaSeconds))
-
 		accel, temp := biology.GenerateBaselineTelemetry(e.SimTime)
 
 		moddedAccel := accelMod * float64(accel)
@@ -85,7 +101,7 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 			newAccel, moddedTemp, e.SimTime,
 		)
 
-		demoLat, demoLon, simSwap := director.GetDemoInterpolated(elapsedHours, e.Scenario, tag.DeviceID)
+		demoLat, demoLon, simSwap := director.GetDemoInterpolated(elapsedHours, currentScenario, tag.DeviceID)
 
 		if demoLat != 0 && demoLon != 0 {
 			payload.DemoLat = demoLat
@@ -115,7 +131,6 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 			PublishErr: publishErr,
 		}
 
-		// Non-blocking send — drop if dashboard is too slow
 		select {
 		case e.Snapshots <- snap:
 		default:
