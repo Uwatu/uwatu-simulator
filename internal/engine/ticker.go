@@ -22,8 +22,8 @@ type TagSnapshot struct {
 	BatteryMv  int
 	UptimeS    int
 	Seq        int
-	DemoLat    float64
-	DemoLon    float64
+	Lat        float64 // Now explicitly passed to UI
+	Lon        float64 // Now explicitly passed to UI
 	SimSwap    bool
 	SimTime    time.Time
 	PublishErr error
@@ -105,7 +105,11 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 
 		demoLat, demoLon, simSwap := director.GetDemoInterpolated(elapsedHours, currentScenario, tag.DeviceID)
 
+		// Determine actual location to show in UI
+		lat, lon := -33.789, 26.421 // Baseline farm location
 		if demoLat != 0 && demoLon != 0 {
+			lat = demoLat
+			lon = demoLon
 			payload.DemoLat = demoLat
 			payload.DemoLon = demoLon
 		}
@@ -126,8 +130,8 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 			BatteryMv:  tag.BatteryMv,
 			UptimeS:    tag.UptimeS,
 			Seq:        tag.Seq,
-			DemoLat:    demoLat,
-			DemoLon:    demoLon,
+			Lat:        lat,
+			Lon:        lon,
 			SimSwap:    simSwap,
 			SimTime:    e.SimTime,
 			PublishErr: publishErr,

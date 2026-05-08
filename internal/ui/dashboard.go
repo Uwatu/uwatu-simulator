@@ -68,18 +68,19 @@ var (
 	styleDim = lipgloss.NewStyle().
 			Foreground(colMuted)
 
+	// Clean header without ugly backgrounds
+	styleTitleBar = lipgloss.NewStyle().
+			BorderBottom(true).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(colBorder).
+			PaddingBottom(1)
+
 	styleFooter = lipgloss.NewStyle().
 			Foreground(colMuted).
 			BorderTop(true).
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(colBorder).
 			PaddingTop(0)
-
-	styleTitleBar = lipgloss.NewStyle().
-			Background(colAccent).
-			Foreground(colBg).
-			Bold(true).
-			Padding(0, 2)
 
 	styleScenarioTag = lipgloss.NewStyle().
 				Foreground(colPurple).
@@ -104,11 +105,12 @@ type alertEntry struct {
 // Per-device state
 // ─────────────────────────────────────────────
 type deviceState struct {
-	snap        engine.TagSnapshot
-	tempHistory [40]float64
-	histIdx     int
-	histFull    bool
-	tickCount   int
+	snap            engine.TagSnapshot
+	tempHistory     [40]float64
+	histIdx         int
+	histFull        bool
+	tickCount       int
+	lastLogRealTime time.Time // Tracks when we last logged normal telemetry
 }
 
 func (d *deviceState) pushTemp(t float64) {
@@ -130,7 +132,6 @@ func (d *deviceState) sparkline() string {
 		return strings.Repeat("▁", 20)
 	}
 
-	// find min/max over rolling window
 	minT, maxT := d.tempHistory[0], d.tempHistory[0]
 	for i := 0; i < count; i++ {
 		if d.tempHistory[i] < minT {
@@ -168,7 +169,7 @@ func (d *deviceState) sparkline() string {
 // ─────────────────────────────────────────────
 type Dashboard struct {
 	devices    map[string]*deviceState
-	deviceKeys []string // insertion-ordered
+	deviceKeys []string
 	alerts     []alertEntry
 	scenario   string
 	speed      int
@@ -248,7 +249,6 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return d, tea.Quit
 
-		// Menu controls
 		case "s":
 			d.showMenu = !d.showMenu
 		case "up", "k":
@@ -273,7 +273,6 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 
-				// Apply to engine safely
 				d.simEngine.SetScenario(scn)
 				d.scenario = name
 				d.showMenu = false
@@ -307,13 +306,19 @@ func (d *Dashboard) drainSnapshots() {
 
 			dev, ok := d.devices[snap.DeviceID]
 			if !ok {
-				dev = &deviceState{}
+				dev = &deviceState{lastLogRealTime: time.Now()}
 				d.devices[snap.DeviceID] = dev
 				d.deviceKeys = append(d.deviceKeys, snap.DeviceID)
 			}
 			prev := dev.snap
 			dev.snap = snap
 			dev.pushTemp(snap.Temp)
+
+			// Generate regular info log every ~4 seconds so user sees things are alive
+			if time.Since(dev.lastLogRealTime) > 4*time.Second {
+				d.addAlert(snap.DeviceID, fmt.Sprintf("Telemetry sent | Seq: %d | Temp: %.1f°C", snap.Seq, snap.Temp), "info")
+				dev.lastLogRealTime = time.Now()
+			}
 
 			// Generate alerts
 			if snap.SimSwap && !prev.SimSwap {
@@ -344,83 +349,90 @@ func (d *Dashboard) addAlert(device, msg, level string) {
 }
 
 // ─────────────────────────────────────────────
-// View
+// View Output Construction
 // ─────────────────────────────────────────────
 func (d *Dashboard) View() string {
-	if d.width == 0 {
+	if d.width == 0 || d.height == 0 {
 		return "Initialising…"
 	}
 
-	var sections []string
-
-	// ── Title bar ──────────────────────────────
+	// 1. Title bar (Clean text, no solid background, right-justified metrics)
 	uptime := time.Since(d.startedAt).Round(time.Second)
-	titleLeft := fmt.Sprintf("  🐄 UWATU DIGITAL TWIN  v1.0.0  │  %s%dx%s  │  scenario: %s",
-		styleLabel.Render("speed "),
-		d.speed,
-		styleLabel.Render(""),
-		styleScenarioTag.Render(d.scenario),
-	)
-	titleRight := fmt.Sprintf("uptime %s  %s  ", uptime, d.spinner.View())
+	titleLeft := styleHeader.Render(" UWATU DIGITAL TWIN v1.0.0 ") +
+		styleDim.Render(" │ speed ") + styleValue.Render(fmt.Sprintf("%dx", d.speed)) +
+		styleDim.Render(" │ scenario: ") + styleScenarioTag.Render(d.scenario)
+	titleRight := styleDim.Render(fmt.Sprintf("uptime %s  %s ", uptime, d.spinner.View()))
+
 	titlePad := d.width - lipgloss.Width(titleLeft) - lipgloss.Width(titleRight)
 	if titlePad < 0 {
 		titlePad = 0
 	}
 	titleBar := styleTitleBar.Width(d.width).Render(titleLeft + strings.Repeat(" ", titlePad) + titleRight)
-	sections = append(sections, titleBar)
 
-	// ── Swap Middle Content (Menu OR Device Panels) ──
-	if d.showMenu {
-		sections = append(sections, d.renderMenu())
-	} else {
-		// Device panels
-		if len(d.deviceKeys) > 0 {
-			panelWidth := (d.width - 4) / len(d.deviceKeys)
-			var panels []string
-			for _, key := range d.deviceKeys {
-				dev := d.devices[key]
-				panels = append(panels, d.renderDevicePanel(dev, panelWidth))
-			}
-			sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top, panels...))
-		} else {
-			sections = append(sections, styleDim.Render("  Waiting for first telemetry…"))
+	// 2. Device panels
+	var panelsView string
+	if len(d.deviceKeys) > 0 {
+		panelWidth := (d.width - 4) / len(d.deviceKeys)
+		var panels []string
+		for _, key := range d.deviceKeys {
+			dev := d.devices[key]
+			panels = append(panels, d.renderDevicePanel(dev, panelWidth))
 		}
+		panelsView = lipgloss.JoinHorizontal(lipgloss.Top, panels...)
+	} else {
+		panelsView = styleDim.Render("  Waiting for first telemetry…")
 	}
 
-	// ── Sim time strip ─────────────────────────
+	// 3. Sim time strip
+	var simTimeView string
 	if len(d.deviceKeys) > 0 {
 		firstDev := d.devices[d.deviceKeys[0]]
 		simT := firstDev.snap.SimTime.Format("Mon 02 Jan 2006  15:04:05")
 		isNight := firstDev.snap.SimTime.Hour() < 6 || firstDev.snap.SimTime.Hour() >= 18
-		nightMark := ""
+		nightMark := "  ☀  DAY"
 		if isNight {
 			nightMark = "  🌙 NIGHT"
-		} else {
-			nightMark = "  ☀  DAY"
 		}
-		sections = append(sections,
-			styleDim.Render("  SIM TIME  ")+styleValue.Render(simT)+styleDim.Render(nightMark)+
-				styleDim.Render(fmt.Sprintf("   total ticks: %d", d.totalTicks)),
-		)
+		simTimeView = styleDim.Render("  SIM TIME  ") + styleValue.Render(simT) + styleDim.Render(nightMark) +
+			styleDim.Render(fmt.Sprintf("   total ticks: %d", d.totalTicks))
 	}
 
-	// ── Alert log ──────────────────────────────
-	alertHeight := d.height - lipgloss.Height(strings.Join(sections, "\n")) - 4
-	if alertHeight < 3 {
-		alertHeight = 3
-	}
-	sections = append(sections, d.renderAlertLog(alertHeight))
+	// 4. Footer
+	footerStr := fmt.Sprintf("  broker: %s   │   [s] switch scenario  │  [q] quit", d.broker)
+	footerView := styleFooter.Width(d.width).Render(footerStr)
 
-	// ── Footer ─────────────────────────────────
-	footer := styleFooter.Width(d.width).Render(
-		fmt.Sprintf("  broker: %s   │   [s] switch scenario  │  [q] quit", d.broker),
+	// Calculate remaining height strictly for the log/menu box
+	usedHeight := lipgloss.Height(titleBar) + lipgloss.Height(panelsView) + lipgloss.Height(simTimeView) + lipgloss.Height(footerView)
+	middleHeight := d.height - usedHeight - 3 // -3 for structural spacing
+	if middleHeight < 5 {
+		middleHeight = 5
+	}
+
+	// 5. Render Middle Area (Menu OR Logs)
+	var middleView string
+	if d.showMenu {
+		middleView = d.renderMenu(middleHeight)
+	} else {
+		middleView = d.renderAlertLog(middleHeight)
+	}
+
+	// Join Everything vertically to prevent overflowing VSCode's terminal bounds
+	finalLayout := lipgloss.JoinVertical(lipgloss.Left,
+		titleBar,
+		"", // spacing
+		panelsView,
+		"", // spacing
+		simTimeView,
+		"", // spacing
+		middleView,
+		footerView,
 	)
-	sections = append(sections, footer)
 
-	return strings.Join(sections, "\n")
+	// Appending a trailing newline guarantees we never rub directly against the bottom edge of VSCode
+	return finalLayout + "\n"
 }
 
-func (d *Dashboard) renderMenu() string {
+func (d *Dashboard) renderMenu(height int) string {
 	var sb strings.Builder
 	sb.WriteString(styleHeader.Render("  SELECT SCENARIO TO INJECT") + "\n\n")
 
@@ -435,8 +447,7 @@ func (d *Dashboard) renderMenu() string {
 	}
 
 	sb.WriteString("\n" + styleDim.Render("    [↑/↓] Navigate   [Enter] Select   [s] Cancel"))
-
-	return stylePanelBase.Width(d.width - 2).Render(sb.String())
+	return stylePanelBase.Width(d.width - 2).Height(height).Render(sb.String())
 }
 
 func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
@@ -445,10 +456,8 @@ func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
 		return stylePanelBase.Width(width - 2).Render(styleDim.Render("no data"))
 	}
 
-	// ── Header ──
 	header := styleHeader.Render(snap.DeviceID) + "  " + styleDim.Render(snap.AnimalID)
 
-	// ── Temperature ──
 	tempColor := colGreen
 	tempLabel := "NORMAL"
 	if snap.Temp >= 39.2 {
@@ -466,17 +475,14 @@ func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
 		tempStyle.Render(fmt.Sprintf("%.2f°C", snap.Temp)) +
 		"  " + tempStyle.Render(tempLabel)
 
-	// Spark
 	sparkLine := styleLabel.Render("      ") +
 		lipgloss.NewStyle().Foreground(tempColor).Render(dev.sparkline())
 
-	// ── Accelerometer ──
 	accelBar := accelMiniBar(snap.Accel, 100)
 	accelLine := styleLabel.Render("ACCEL ") +
 		styleValue.Render(fmt.Sprintf("%3d g", snap.Accel)) +
 		"  " + accelBar
 
-	// ── Battery ──
 	battColor := colGreen
 	if snap.BatteryPct < 20 {
 		battColor = colRed
@@ -488,15 +494,9 @@ func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
 		battStyle.Render(fmt.Sprintf("%3d%%", snap.BatteryPct)) +
 		styleDim.Render(fmt.Sprintf("  %dmV", snap.BatteryMv))
 
-	// ── Location ──
-	locLine := styleLabel.Render("LOC   ")
-	if snap.DemoLat != 0 || snap.DemoLon != 0 {
-		locLine += styleValue.Render(fmt.Sprintf("%.4f, %.4f", snap.DemoLat, snap.DemoLon))
-	} else {
-		locLine += styleDim.Render("—")
-	}
+	// Using the actual Lat and Lon populated by the engine
+	locLine := styleLabel.Render("LOC   ") + styleValue.Render(fmt.Sprintf("%.4f, %.4f", snap.Lat, snap.Lon))
 
-	// ── SIM swap ──
 	simLine := styleLabel.Render("SIM   ")
 	if snap.SimSwap {
 		simLine += styleSimSwap.Render("⚠  SWAP DETECTED")
@@ -504,7 +504,6 @@ func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
 		simLine += styleOk.Render("✓ OK")
 	}
 
-	// ── Uptime / seq ──
 	metaLine := styleDim.Render(fmt.Sprintf("uptime %s   seq #%d",
 		formatDuration(snap.UptimeS), snap.Seq))
 
@@ -524,14 +523,13 @@ func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
 }
 
 func (d *Dashboard) renderAlertLog(height int) string {
-	title := styleHeader.Render("  ALERT LOG")
+	title := styleHeader.Render("  SYSTEM & TELEMETRY LOG")
 
 	if len(d.alerts) == 0 {
-		body := title + "\n" + styleOk.Render("  ✓ No alerts")
+		body := title + "\n" + styleOk.Render("  ✓ No events yet...")
 		return stylePanelBase.Width(d.width - 2).Height(height).Render(body)
 	}
 
-	// Show most-recent entries that fit
 	var lines []string
 	start := len(d.alerts) - (height - 2)
 	if start < 0 {
@@ -546,7 +544,7 @@ func (d *Dashboard) renderAlertLog(height int) string {
 		case "warn":
 			levelStyle = styleWarn
 		case "info":
-			levelStyle = lipgloss.NewStyle().Foreground(colAccent)
+			levelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#56d364")) // dim green for info
 		default:
 			levelStyle = styleOk
 		}
@@ -558,12 +556,8 @@ func (d *Dashboard) renderAlertLog(height int) string {
 	}
 
 	body := title + "\n" + strings.Join(lines, "\n")
-	return stylePanelBase.Width(d.width - 2).Render(body)
+	return stylePanelBase.Width(d.width - 2).Height(height).Render(body)
 }
-
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
 
 func accelMiniBar(val, max int) string {
 	filled := val * 10 / max
@@ -573,14 +567,12 @@ func accelMiniBar(val, max int) string {
 	if filled < 0 {
 		filled = 0
 	}
-
 	color := colGreen
 	if val > 60 {
 		color = colOrange
 	} else if val > 80 {
 		color = colRed
 	}
-
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", 10-filled)
 	return lipgloss.NewStyle().Foreground(color).Render(bar)
 }
