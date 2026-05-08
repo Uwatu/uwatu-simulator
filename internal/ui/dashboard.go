@@ -3,9 +3,11 @@ package ui
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"uwatu-simulator/internal/director"
 	"uwatu-simulator/internal/engine"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -178,21 +180,48 @@ type Dashboard struct {
 	totalTicks int
 	startedAt  time.Time
 	lastUpdate time.Time
+
+	// Menu state
+	simEngine     *engine.Engine
+	showMenu      bool
+	scenarioFiles []string
+	scenarioNames []string
+	menuCursor    int
 }
 
-func NewDashboard(snapshots <-chan engine.TagSnapshot, scenario string, speed int, broker string) *Dashboard {
+func NewDashboard(snapshots <-chan engine.TagSnapshot, scenario string, speed int, broker string, eng *engine.Engine) *Dashboard {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colCyan)
 
+	// Preload available scenarios from disk
+	files, _ := filepath.Glob("config/scenarios/*.json")
+	names := []string{"Baseline (Default Healthy)"}
+	paths := []string{""}
+
+	for _, f := range files {
+		paths = append(paths, f)
+		base := filepath.Base(f)
+		names = append(names, strings.TrimSuffix(base, filepath.Ext(base)))
+	}
+
+	if scenario == "" {
+		scenario = "Baseline (Default Healthy)"
+	} else {
+		scenario = filepath.Base(scenario)
+	}
+
 	return &Dashboard{
-		devices:   make(map[string]*deviceState),
-		snapshots: snapshots,
-		scenario:  scenario,
-		speed:     speed,
-		broker:    broker,
-		spinner:   sp,
-		startedAt: time.Now(),
+		devices:       make(map[string]*deviceState),
+		snapshots:     snapshots,
+		scenario:      scenario,
+		speed:         speed,
+		broker:        broker,
+		spinner:       sp,
+		startedAt:     time.Now(),
+		simEngine:     eng,
+		scenarioFiles: paths,
+		scenarioNames: names,
 	}
 }
 
@@ -200,7 +229,6 @@ func NewDashboard(snapshots <-chan engine.TagSnapshot, scenario string, speed in
 // Bubbletea interface
 // ─────────────────────────────────────────────
 type tickMsg time.Time
-type snapshotMsg engine.TagSnapshot
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
@@ -216,8 +244,41 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.KeyMsg:
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "q", "ctrl+c":
 			return d, tea.Quit
+
+		// Menu controls
+		case "s":
+			d.showMenu = !d.showMenu
+		case "up", "k":
+			if d.showMenu && d.menuCursor > 0 {
+				d.menuCursor--
+			}
+		case "down", "j":
+			if d.showMenu && d.menuCursor < len(d.scenarioFiles)-1 {
+				d.menuCursor++
+			}
+		case "enter":
+			if d.showMenu {
+				path := d.scenarioFiles[d.menuCursor]
+				name := d.scenarioNames[d.menuCursor]
+
+				var scn director.Scenario
+				if path != "" {
+					var err error
+					scn, err = director.LoadScenario(path)
+					if err != nil {
+						d.addAlert("SYSTEM", fmt.Sprintf("Failed to load scenario: %v", err), "alert")
+					}
+				}
+
+				// Apply to engine safely
+				d.simEngine.SetScenario(scn)
+				d.scenario = name
+				d.showMenu = false
+				d.addAlert("SYSTEM", fmt.Sprintf("Switched to scenario: %s", name), "info")
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -230,7 +291,6 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return d, cmd
 
 	case tickMsg:
-		// Drain all pending snapshots
 		d.drainSnapshots()
 		return d, tickCmd()
 	}
@@ -294,16 +354,12 @@ func (d *Dashboard) View() string {
 	var sections []string
 
 	// ── Title bar ──────────────────────────────
-	scenarioLabel := "default (healthy baseline)"
-	if d.scenario != "" {
-		scenarioLabel = d.scenario
-	}
 	uptime := time.Since(d.startedAt).Round(time.Second)
 	titleLeft := fmt.Sprintf("  🐄 UWATU DIGITAL TWIN  v1.0.0  │  %s%dx%s  │  scenario: %s",
 		styleLabel.Render("speed "),
 		d.speed,
 		styleLabel.Render(""),
-		styleScenarioTag.Render(scenarioLabel),
+		styleScenarioTag.Render(d.scenario),
 	)
 	titleRight := fmt.Sprintf("uptime %s  %s  ", uptime, d.spinner.View())
 	titlePad := d.width - lipgloss.Width(titleLeft) - lipgloss.Width(titleRight)
@@ -313,17 +369,22 @@ func (d *Dashboard) View() string {
 	titleBar := styleTitleBar.Width(d.width).Render(titleLeft + strings.Repeat(" ", titlePad) + titleRight)
 	sections = append(sections, titleBar)
 
-	// ── Device panels ──────────────────────────
-	if len(d.deviceKeys) > 0 {
-		panelWidth := (d.width - 4) / len(d.deviceKeys)
-		var panels []string
-		for _, key := range d.deviceKeys {
-			dev := d.devices[key]
-			panels = append(panels, d.renderDevicePanel(dev, panelWidth))
-		}
-		sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top, panels...))
+	// ── Swap Middle Content (Menu OR Device Panels) ──
+	if d.showMenu {
+		sections = append(sections, d.renderMenu())
 	} else {
-		sections = append(sections, styleDim.Render("  Waiting for first telemetry…"))
+		// Device panels
+		if len(d.deviceKeys) > 0 {
+			panelWidth := (d.width - 4) / len(d.deviceKeys)
+			var panels []string
+			for _, key := range d.deviceKeys {
+				dev := d.devices[key]
+				panels = append(panels, d.renderDevicePanel(dev, panelWidth))
+			}
+			sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top, panels...))
+		} else {
+			sections = append(sections, styleDim.Render("  Waiting for first telemetry…"))
+		}
 	}
 
 	// ── Sim time strip ─────────────────────────
@@ -352,11 +413,30 @@ func (d *Dashboard) View() string {
 
 	// ── Footer ─────────────────────────────────
 	footer := styleFooter.Width(d.width).Render(
-		fmt.Sprintf("  broker: %s   │   [q] quit", d.broker),
+		fmt.Sprintf("  broker: %s   │   [s] switch scenario  │  [q] quit", d.broker),
 	)
 	sections = append(sections, footer)
 
 	return strings.Join(sections, "\n")
+}
+
+func (d *Dashboard) renderMenu() string {
+	var sb strings.Builder
+	sb.WriteString(styleHeader.Render("  SELECT SCENARIO TO INJECT") + "\n\n")
+
+	for i, name := range d.scenarioNames {
+		cursor := "    "
+		style := styleDim
+		if i == d.menuCursor {
+			cursor = "  > "
+			style = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+		}
+		sb.WriteString(cursor + style.Render(name) + "\n")
+	}
+
+	sb.WriteString("\n" + styleDim.Render("    [↑/↓] Navigate   [Enter] Select   [s] Cancel"))
+
+	return stylePanelBase.Width(d.width - 2).Render(sb.String())
 }
 
 func (d *Dashboard) renderDevicePanel(dev *deviceState, width int) string {
@@ -465,6 +545,8 @@ func (d *Dashboard) renderAlertLog(height int) string {
 			levelStyle = styleAlert
 		case "warn":
 			levelStyle = styleWarn
+		case "info":
+			levelStyle = lipgloss.NewStyle().Foreground(colAccent)
 		default:
 			levelStyle = styleOk
 		}
