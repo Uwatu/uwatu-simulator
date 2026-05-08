@@ -1,9 +1,26 @@
 {
-  "scenario_name": "Theft DEV_001",
+  "scenario_name": "Smooth Theft – Kericho Farm (DEV_001 only)",
   "keyframes": [
-    { "hour": 0, "accel_modifier": 1.0, "temp_modifier": 0.0 },
-    { "hour": 0,   "devices": ["DEV_001"], "demo_lat": -0.3680, "demo_lon": 35.2830, "sim_swap": false },
-    { "hour": 0.5, "devices": ["DEV_001"], "demo_lat": -0.3700, "demo_lon": 35.2850, "sim_swap": false },
-    { "hour": 1,   "devices": ["DEV_001"], "demo_lat": -0.3740, "demo_lon": 35.2890, "sim_swap": true }
+    {
+      "hour": 0.0,
+      "accel_modifier": 1.0,
+      "temp_modifier": 0.0,
+      "devices": ["DEV_001", "DEV_002"],
+      "demo_lat": -0.358391,
+      "demo_lon": 35.303367,
+      "sim_swap": false
+    },
+    { "hour": 0.010, "devices": ["DEV_001"], "demo_lat": -0.358391, "demo_lon": 35.303367, "sim_swap": false },
+    { "hour": 0.020, "devices": ["DEV_001"], "demo_lat": -0.358391, "demo_lon": 35.303367, "sim_swap": false },
+    { "hour": 0.030, "devices": ["DEV_001"], "demo_lat": -0.358391, "demo_lon": 35.303367, "sim_swap": false },
+    { "hour": 0.0347,"devices": ["DEV_001"], "demo_lat": -0.358391, "demo_lon": 35.303367, "sim_swap": false },
+    { "hour": 0.040, "devices": ["DEV_001"], "demo_lat": -0.3620, "demo_lon": 35.3060, "sim_swap": false },
+    { "hour": 0.045, "devices": ["DEV_001"], "demo_lat": -0.3650, "demo_lon": 35.3085, "sim_swap": false },
+    { "hour": 0.050, "devices": ["DEV_001"], "demo_lat": -0.3680, "demo_lon": 35.3110, "sim_swap": false },
+    { "hour": 0.055, "devices": ["DEV_001"], "demo_lat": -0.3710, "demo_lon": 35.3135, "sim_swap": false },
+    { "hour": 0.060, "devices": ["DEV_001"], "demo_lat": -0.3740, "demo_lon": 35.3160, "sim_swap": false },
+    { "hour": 0.065, "devices": ["DEV_001"], "demo_lat": -0.3770, "demo_lon": 35.3180, "sim_swap": false },
+    { "hour": 0.070, "devices": ["DEV_001"], "demo_lat": -0.3800, "demo_lon": 35.3200, "sim_swap": false },
+    { "hour": 0.075, "devices": ["DEV_001"], "demo_lat": -0.3800, "demo_lon": 35.3200, "sim_swap": true }
   ]
 }
