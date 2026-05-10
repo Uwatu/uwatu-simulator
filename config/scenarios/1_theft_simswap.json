@@ -1,5 +1,5 @@
 {
-  "scenario_name": "Theft – Sim swap",
+  "scenario_name": "Theft – SIM Swap (Delayed)",
   "keyframes": [
     {
       "hour": 0.0,
@@ -13,11 +13,10 @@
     {
       "hour": 0.0,
       "devices": ["DEV_002"],
-      "demo_lat": -0.364000,
-      "demo_lon": 35.304000,
-      "sim_swap": false
-    },
-    { "hour": 0.002, "devices": ["DEV_002"], "demo_lat": -0.364000, "demo_lon": 35.304000, "sim_swap": false },
-    { "hour": 0.004, "devices": ["DEV_002"], "demo_lat": -0.364000, "demo_lon": 35.304000, "sim_swap": true }
+      "demo_lat": -0.360627,
+      "demo_lon": 35.300798,
+      "sim_swap": true
+    }
+
   ]
 }
