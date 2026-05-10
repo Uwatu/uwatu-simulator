@@ -54,9 +54,10 @@ type SignalMatrix struct {
 	NokiaSignals    NokiaSignals    `json:"nokia_signals"`
 	FirmwarePayload FirmwarePayload `json:"firmware_payload"`
 	Context         Context         `json:"context"`
-	DemoLat         float64         `json:"demo_lat"`   // always sent
-	DemoLon         float64         `json:"demo_lon"`   // always sent
-	SimSwap         bool            `json:"sim_swap"`   // always sent
+	DemoLat         float64         `json:"demo_lat"`
+	DemoLon         float64         `json:"demo_lon"`
+	SimSwap         bool            `json:"sim_swap"`
+	Connectivity    bool            `json:"connectivity"`   // NEW: true → offline
 }
 
 func BuildNormalSignalMatrix(deviceID, msisdn, farmID, animalID string,

@@ -121,6 +121,8 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 
 		// Always get position & sim_swap from scenario (interpolated) or default
 		demoLat, demoLon, simSwap := director.GetDemoInterpolated(elapsedHours, currentScenario, tag.DeviceID)
+		connStatus := director.GetDemoConnectivity(elapsedHours, currentScenario, tag.DeviceID)
+		payload.Connectivity = connStatus
 
 		// Fallback to device's default location if no scenario provides coordinates
 		if demoLat == 0 && demoLon == 0 {
@@ -135,6 +137,7 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 		payload.DemoLon = demoLon
 		payload.SimSwap = simSwap
 
+		fmt.Printf("[DEBUG] %s connectivity=%v\n", tag.DeviceID, payload.Connectivity)
 		publishErr := e.Emitter.Publish(tag.FarmID, tag.DeviceID, payload)
 		if publishErr != nil {
 			fmt.Printf("publish error for %s: %v\n", tag.DeviceID, publishErr)

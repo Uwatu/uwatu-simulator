@@ -1,4 +1,4 @@
-//parser.go
+// parser.go
 package director
 
 import (
@@ -13,7 +13,8 @@ type KeyFrame struct {
 	DemoLat       float64  `json:"demo_lat,omitempty"`
 	DemoLon       float64  `json:"demo_lon,omitempty"`
 	SimSwap       bool     `json:"sim_swap,omitempty"`
-	Devices       []string `json:"devices,omitempty"` // empty → all devices
+	Connectivity  *bool    `json:"connectivity,omitempty"`   // NEW: nil means not set
+	Devices       []string `json:"devices,omitempty"`
 }
 
 type Scenario struct {
@@ -80,6 +81,23 @@ func deviceMatches(frame KeyFrame, deviceID string) bool {
 		}
 	}
 	return false
+}
+
+func GetDemoConnectivity(currentHour float64, scenario Scenario, deviceID string) bool {
+	if len(scenario.KeyFrames) == 0 {
+		return false
+	}
+	// Walk from the beginning and pick the last keyframe that applies to this device
+	// and that contains a connectivity value.
+	var result bool
+	for _, kf := range scenario.KeyFrames {
+		if currentHour >= kf.Hour && deviceMatches(kf, deviceID) {
+			if kf.Connectivity != nil {
+				result = *kf.Connectivity
+			}
+		}
+	}
+	return result
 }
 
 // GetDemoInterpolated returns smoothly interpolated (lat, lon, sim_swap)
