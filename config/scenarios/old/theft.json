@@ -6,15 +6,15 @@
       "accel_modifier": 1.0,
       "temp_modifier": 0.0,
       "devices": ["DEV_001"],
-      "demo_lat": -0.358391,
-      "demo_lon": 35.303367,
+      "demo_lat": -0.360627,
+      "demo_lon": 35.300798,
       "sim_swap": false
     },
     {
       "hour": 0.0,
       "devices": ["DEV_002"],
-      "demo_lat": -0.358391,
-      "demo_lon": 35.305500,
+      "demo_lat": -0.355361,
+      "demo_lon": 35.305120,
       "sim_swap": false
     },
     { "hour": 0.010, "devices": ["DEV_001"], "demo_lat": -0.358391, "demo_lon": 35.303367, "sim_swap": false },

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"uwatu-simulator/internal/hardware"
 )
 
-// TagSnapshot is a point-in-time reading for one tag, sent to the UI layer.
 type TagSnapshot struct {
 	DeviceID   string
 	AnimalID   string
@@ -22,8 +22,8 @@ type TagSnapshot struct {
 	BatteryMv  int
 	UptimeS    int
 	Seq        int
-	Lat        float64 // Now explicitly passed to UI
-	Lon        float64 // Now explicitly passed to UI
+	Lat        float64
+	Lon        float64
 	SimSwap    bool
 	SimTime    time.Time
 	PublishErr error
@@ -36,9 +36,15 @@ type Engine struct {
 	SpeedMult    int
 	Scenario     director.Scenario
 	Emitter      *emitter.MqttEmitter
-	Snapshots    chan<- TagSnapshot // send-only channel to UI
+	Snapshots    chan<- TagSnapshot
 
-	mu sync.RWMutex // Protects Scenario and StartSimTime from UI thread
+	mu sync.RWMutex
+}
+
+// default locations for each device (Kericho farm)
+var defaultLocations = map[string][2]float64{
+	"DEV_001": {-0.355361, 35.305120},
+	"DEV_002": {-0.360627, 35.300798},
 }
 
 func NewEngine(
@@ -60,24 +66,34 @@ func NewEngine(
 	}
 }
 
-// SetScenario safely swaps the active scenario and resets the timeline.
 func (e *Engine) SetScenario(scn director.Scenario) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Scenario = scn
-	e.StartSimTime = e.SimTime // Reset so the new scenario starts at its hour 0
+	e.StartSimTime = e.SimTime
 }
 
-// Step advances the simulation by a fractional amount of real seconds.
-func (e *Engine) Step(realDeltaSeconds float64) {
-	simulatedDeltaSeconds := realDeltaSeconds * float64(e.SpeedMult)
-	e.SimTime = e.SimTime.Add(time.Duration(simulatedDeltaSeconds * float64(time.Second)))
+func (e *Engine) RestartScenario() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.StartSimTime = e.SimTime
+}
 
-	// Thread-safe read of current scenario state
+func (e *Engine) SetSpeed(speed int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.SpeedMult = speed
+}
+
+func (e *Engine) Step(realDeltaSeconds float64) {
 	e.mu.RLock()
 	currentScenario := e.Scenario
 	startSimTime := e.StartSimTime
+	currentSpeed := e.SpeedMult
 	e.mu.RUnlock()
+
+	simulatedDeltaSeconds := realDeltaSeconds * float64(currentSpeed)
+	e.SimTime = e.SimTime.Add(time.Duration(simulatedDeltaSeconds * float64(time.Second)))
 
 	duration := e.SimTime.Sub(startSimTime)
 	elapsedHours := duration.Hours()
@@ -93,8 +109,8 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 		moddedTemp := tempMod + temp
 
 		var newAccel int = int(moddedAccel)
-		if newAccel < 0 {
-			newAccel = 0
+		if newAccel <= 0 {
+			newAccel = rand.IntN(4) + 1
 		}
 
 		payload := emitter.BuildNormalSignalMatrix(
@@ -103,16 +119,20 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 			newAccel, moddedTemp, e.SimTime,
 		)
 
+		// Always get position & sim_swap from scenario (interpolated) or default
 		demoLat, demoLon, simSwap := director.GetDemoInterpolated(elapsedHours, currentScenario, tag.DeviceID)
 
-		// Determine actual location to show in UI
-		lat, lon := -33.789, 26.421 // Baseline farm location
-		if demoLat != 0 && demoLon != 0 {
-			lat = demoLat
-			lon = demoLon
-			payload.DemoLat = demoLat
-			payload.DemoLon = demoLon
+		// Fallback to device's default location if no scenario provides coordinates
+		if demoLat == 0 && demoLon == 0 {
+			if defaultLoc, ok := defaultLocations[tag.DeviceID]; ok {
+				demoLat = defaultLoc[0]
+				demoLon = defaultLoc[1]
+			}
 		}
+
+		// Always write them into the payload (fields are non-omitempty)
+		payload.DemoLat = demoLat
+		payload.DemoLon = demoLon
 		payload.SimSwap = simSwap
 
 		publishErr := e.Emitter.Publish(tag.FarmID, tag.DeviceID, payload)
@@ -130,14 +150,13 @@ func (e *Engine) Step(realDeltaSeconds float64) {
 			BatteryMv:  tag.BatteryMv,
 			UptimeS:    tag.UptimeS,
 			Seq:        tag.Seq,
-			Lat:        lat,
-			Lon:        lon,
+			Lat:        demoLat,
+			Lon:        demoLon,
 			SimSwap:    simSwap,
 			SimTime:    e.SimTime,
 			PublishErr: publishErr,
 		}
 
-		// Non-blocking send — drop if dashboard is too slow
 		select {
 		case e.Snapshots <- snap:
 		default:

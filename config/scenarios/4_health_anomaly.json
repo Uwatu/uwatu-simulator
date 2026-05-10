@@ -1,0 +1,8 @@
+{
+  "scenario_name": "Health Anomaly",
+  "keyframes": [
+    { "hour": 0.0, "temp_modifier": 0.0, "accel_modifier": 1.0 },
+    { "hour": 0.5, "temp_modifier": 1.2, "accel_modifier": 0.6 },
+    { "hour": 1.0, "temp_modifier": 2.0, "accel_modifier": 0.3 }
+  ]
+}
